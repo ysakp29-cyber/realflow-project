@@ -1,0 +1,12 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {metrics,aggregate,parseCSV,csv,validate,advice,sample} from '../analytics.js';
+const r={date:'2026-10-30',product:'후크',keyword:'무타공',spend:10000,revenue:50000,impressions:5000,clicks:100,orders:5};
+test('지표 6종의 계산',()=>{const m=metrics(r);assert.equal(m.roas,500);assert.equal(m.acos,20);assert.equal(m.ctr,2);assert.equal(m.cpc,100);assert.equal(m.cvr,5);});
+test('분모 0은 null, Infinity 방지',()=>{const m=metrics({spend:0,revenue:0,impressions:0,clicks:0,orders:0});for(const k of ['roas','acos','ctr','cpc','cvr'])assert.equal(m[k],null)});
+test('합산 후 지표 계산: 단순 평균 방지',()=>{const m=aggregate([r,{...r,spend:30000,revenue:30000}])[0];assert.equal(m.roas,200);assert.equal(m.acos,50)});
+test('BOM, 쉼표, 따옴표, 줄바꿈 CSV 왕복',()=>{const row={...r,product:'선반, "릴플로"\n세트'};assert.deepEqual(parseCSV(csv([row])),[row])});
+test('한국어 헤더 및 금액 쉼표',()=>assert.equal(parseCSV('날짜,상품명,키워드,광고비,광고매출,노출수,클릭수,주문수\n2026-10-30,후크,후크,"10,000",50000,5000,100,5')[0].spend,10000));
+test('음수, 빈 숫자, 날짜, 소수 건수, 노출보다 큰 클릭 차단',()=>{for(const patch of [{spend:-1},{spend:''},{date:'2026-02-30'},{clicks:1.5},{clicks:6000}])assert.throws(()=>validate({...r,...patch}))});
+test('CSV 필수 열, 중복 헤더, 깨진 행, 빈 파일 차단',()=>{for(const text of ['', 'date,date','date,product,keyword,spend,revenue,impressions,clicks,orders\n2026-10-30,a,b,1,2,3,1','"bad'])assert.throws(()=>parseCSV(text))});
+test('분석 제안: 표본 부족, 주문 없음, 목표 미달, 확대',()=>{assert.equal(advice([{...r,clicks:10}])[0].title,'데이터 더 모으기');assert.equal(advice([{...r,orders:0}])[0].title,'낭비 구간 점검');assert.equal(advice([{...r,revenue:1000}])[0].title,'효율 개선 필요');assert.equal(advice([r])[0].title,'확대 후보')});
+test('CSV 수식 주입 방지',()=>assert.ok(csv([{...r,product:'=1+1'}]).includes("'=1+1")));
+test('예시 42건 유효, 빈 집계',()=>{assert.equal(sample.length,42);sample.forEach(r=>validate({...r}));assert.deepEqual(aggregate([]),[])});
